@@ -11,5 +11,5 @@ RUN pip install --no-cache-dir --upgrade -r requirements.txt
 # Copy the current directory contents into the container at /app
 COPY . /app
 
-# Run app with uvicorn when the container launches (--proxy-headers for nginx)
-CMD ["uvicorn", "app.main:app", "--proxy-headers", "--host", "0.0.0.0", "--port", "8000"]
+# Run app with uvicorn when the container launches
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
