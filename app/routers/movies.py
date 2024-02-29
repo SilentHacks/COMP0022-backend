@@ -30,8 +30,8 @@ class Movie(BaseModel):
     created_at: datetime
     updated_at: datetime
     genres: list[str] = []
-    actors: list[dict[str, str]] = []
-    directors: list[dict[str, str]] = []
+    actors: list[dict[str, str | int | None]] = []
+    directors: list[dict[str, str | None]] = []
 
 
 @router.get("/")
@@ -49,12 +49,13 @@ async def get_movie(movie_id: int, conn: Connection = Depends(get_db_connection)
             m.tagline, m.overview, m.poster_path, m.backdrop_path, m.budget, m.revenue,
             m.status, m.created_at, m.updated_at,
             array_agg(DISTINCT g.name) AS genres,
-            (SELECT json_agg(jsonb_build_object('name', p.name, 'role', mp.role, 'character_name', mp.character_name))
+            (SELECT json_agg(jsonb_build_object('name', p.name, 'role', mp.role, 'character_name', mp.character_name,
+                                                'profile_path',p.profile_path, 'order', mp."order") ORDER BY mp."order")
              FROM movie_people mp
              JOIN people p ON mp.person_id = p.id
              WHERE mp.movie_id = m.id AND mp.role = 'Actor'
             ) AS actors,
-            (SELECT json_agg(jsonb_build_object('name', p.name, 'role', mp.role))
+            (SELECT json_agg(jsonb_build_object('name', p.name, 'role', mp.role, 'profile_path', p.profile_path))
              FROM movie_people mp
              JOIN people p ON mp.person_id = p.id
              WHERE mp.movie_id = m.id AND mp.role = 'Director'
