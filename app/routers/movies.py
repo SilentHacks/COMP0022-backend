@@ -35,8 +35,8 @@ class Movie(BaseModel):
 
 
 @router.get("/")
-async def get_movies(conn: Connection = Depends(get_db_connection)) -> list[Movie]:
-    movies = await conn.fetch("SELECT * FROM movies")
+async def get_movies(limit: int = 100, offset: int = 0, conn: Connection = Depends(get_db_connection)) -> list[Movie]:
+    movies = await conn.fetch("SELECT * FROM movies LIMIT $1 OFFSET $2", limit, offset)
     return [dict(movie) for movie in movies]  # type: ignore
 
 
