@@ -41,7 +41,7 @@ async def get_movies(
         genres: str = None,
         release_year: str = None,
         conn: Connection = Depends(get_db_connection)
-) -> list[Movie]:
+) -> dict[str, int | list[Movie]]:
     where = ""
     having = ""
     params = [limit, offset]
@@ -64,6 +64,21 @@ async def get_movies(
                       f"BETWEEN ${len(params) + 1} AND ${len(params) + 2}")
             params.append(min(split_years))
             params.append(max(split_years))
+
+    if where or having:
+        total_rows_query = f"""
+                SELECT COUNT(*) FROM (
+                    SELECT m.id FROM movies m
+                    INNER JOIN movie_genres mg ON m.id = mg.movie_id
+                    INNER JOIN genres g ON mg.genre_id = g.id
+                    {"WHERE " + where if where else ""}
+                    GROUP BY m.id
+                    {"HAVING " + having if having else ""}
+                ) AS total_rows HAVING COUNT(*) = $1 OR COUNT(*) != $1 OR COUNT(*) = $2;
+                """
+        total_rows = await conn.fetchval(total_rows_query, *params)
+    else:
+        total_rows = await conn.fetchval("SELECT COUNT(*) FROM movies")
 
     movies = await conn.fetch(
         f"""
@@ -95,7 +110,7 @@ async def get_movies(
         """, *params
     )
 
-    return [dict(movie) for movie in movies]  # type: ignore
+    return {'total_movies': total_rows, 'movies': [dict(movie) for movie in movies]}  # type: ignore
 
 
 @router.get("/{movie_id}")
