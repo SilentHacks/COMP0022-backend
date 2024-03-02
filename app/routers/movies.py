@@ -35,8 +35,52 @@ class Movie(BaseModel):
 
 
 @router.get("/")
-async def get_movies(limit: int = 100, offset: int = 0, conn: Connection = Depends(get_db_connection)) -> list[Movie]:
-    movies = await conn.fetch("SELECT * FROM movies LIMIT $1 OFFSET $2", limit, offset)
+async def get_movies(
+        limit: int = 100,
+        offset: int = 0,
+        genres: str = None,
+        conn: Connection = Depends(get_db_connection)
+) -> list[Movie]:
+    where = ""
+    having = ""
+    params = [limit, offset]
+
+    if genres:
+        split_genres = [genre.strip().lower() for genre in genres.split(",") if genre]
+        if split_genres:
+            having += 'array_agg(DISTINCT LOWER(g.name)) @> $3'
+            params.append(split_genres)
+
+    movies = await conn.fetch(
+        f"""
+        SELECT 
+            m.id, m.title, m.imdb_id, m.tmdb_id, m.release_date, m.runtime, 
+            m.tagline, m.overview, m.poster_path, m.backdrop_path, m.budget, m.revenue,
+            m.status, m.created_at, m.updated_at,
+            array_agg(DISTINCT g.name) AS genres,
+            (SELECT json_agg(jsonb_build_object('name', p.name, 'role', mp.role, 'character_name', mp.character_name,
+                                                'profile_path',p.profile_path, 'order', mp."order") ORDER BY mp."order")
+             FROM movie_people mp
+             JOIN people p ON mp.person_id = p.id
+             WHERE mp.movie_id = m.id AND mp.role = 'Actor'
+            ) AS actors,
+            (SELECT json_agg(jsonb_build_object('name', p.name, 'role', mp.role, 'profile_path', p.profile_path))
+             FROM movie_people mp
+             JOIN people p ON mp.person_id = p.id
+             WHERE mp.movie_id = m.id AND mp.role = 'Director'
+            ) AS directors
+        FROM 
+            movies m
+        LEFT JOIN movie_genres mg ON m.id = mg.movie_id
+        LEFT JOIN genres g ON mg.genre_id = g.id
+        {"WHERE " + where if where else ""}
+        GROUP BY 
+            m.id
+        {"HAVING " + having if having else ""}
+        LIMIT $1 OFFSET $2;
+        """, *params
+    )
+
     return [dict(movie) for movie in movies]  # type: ignore
 
 
