@@ -39,6 +39,7 @@ async def get_movies(
         limit: int = 100,
         offset: int = 0,
         genres: str = None,
+        release_year: str = None,
         conn: Connection = Depends(get_db_connection)
 ) -> list[Movie]:
     where = ""
@@ -50,6 +51,19 @@ async def get_movies(
         if split_genres:
             having += 'array_agg(DISTINCT LOWER(g.name)) @> $3'
             params.append(split_genres)
+
+    if release_year:
+        split_years = [year.strip() for year in release_year.split(",") if year]
+        if split_years:
+            try:
+                split_years = [int(year) for year in split_years]
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid release_year format")
+
+            where += (f"{' AND ' if where else ''}EXTRACT(YEAR FROM m.release_date) "
+                      f"BETWEEN ${len(params) + 1} AND ${len(params) + 2}")
+            params.append(min(split_years))
+            params.append(max(split_years))
 
     movies = await conn.fetch(
         f"""
