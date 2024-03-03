@@ -30,6 +30,8 @@ class Movie(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+    average_rating: float
+    num_reviews: int
     genres: list[str] = []
     actors: list[dict[str, str | int | None]] = []
     directors: list[dict[str, str | None]] = []
@@ -41,7 +43,7 @@ async def get_movies(
         offset: int = 0,
         genres: str = None,
         release_year: str = None,
-        sort: Literal["release_date", "title"] = "release_date",
+        sort: Literal["release_date", "title", "average_rating"] = "release_date",
         sort_order: Literal["desc", "asc"] = "desc",
         conn: Connection = Depends(get_db_connection)
 ) -> dict[str, int | list[Movie | str]]:
@@ -103,27 +105,38 @@ async def get_movies(
             m.id, m.title, m.imdb_id, m.tmdb_id, m.release_date, m.runtime, 
             m.tagline, m.overview, m.poster_path, m.backdrop_path, m.budget, m.revenue,
             m.status, m.created_at, m.updated_at,
+            COALESCE(AVG(ur.rating::FLOAT), 0) AS average_rating,
+            COUNT(ur.rating) AS num_reviews,
             array_agg(DISTINCT g.name) AS genres,
-            (SELECT json_agg(jsonb_build_object('name', p.name, 'role', mp.role, 'character_name', mp.character_name,
-                                                'profile_path',p.profile_path, 'order', mp."order") ORDER BY mp."order")
-             FROM movie_people mp
-             JOIN people p ON mp.person_id = p.id
-             WHERE mp.movie_id = m.id AND mp.role = 'Actor'
+            COALESCE(
+                (
+                    SELECT json_agg(jsonb_build_object('name', p.name, 'role', mp.role, 'character_name', mp.character_name,
+                                                        'profile_path', p.profile_path, 'order', mp."order") ORDER BY mp."order")
+                    FROM movie_people mp
+                    JOIN people p ON mp.person_id = p.id
+                    WHERE mp.movie_id = m.id AND mp.role = 'Actor'
+                ),
+                '[]'
             ) AS actors,
-            (SELECT json_agg(jsonb_build_object('name', p.name, 'role', mp.role, 'profile_path', p.profile_path))
-             FROM movie_people mp
-             JOIN people p ON mp.person_id = p.id
-             WHERE mp.movie_id = m.id AND mp.role = 'Director'
+            COALESCE(
+                (
+                    SELECT json_agg(jsonb_build_object('name', p.name, 'role', mp.role, 'profile_path', p.profile_path))
+                    FROM movie_people mp
+                    JOIN people p ON mp.person_id = p.id
+                    WHERE mp.movie_id = m.id AND mp.role = 'Director'
+                ),
+                '[]'
             ) AS directors
         FROM 
             movies m
         LEFT JOIN movie_genres mg ON m.id = mg.movie_id
         LEFT JOIN genres g ON mg.genre_id = g.id
+        LEFT JOIN user_ratings ur ON m.id = ur.movie_id
         {"WHERE " + where if where else ""}
         GROUP BY 
             m.id
         {"HAVING " + having if having else ""}
-        ORDER BY {sort} {sort_order}
+        ORDER BY {sort} {sort_order}, num_reviews DESC, m.release_date DESC, m.title ASC
         LIMIT $1 OFFSET $2;
         """, *params
     )
@@ -145,22 +158,33 @@ async def get_movie(movie_id: int, conn: Connection = Depends(get_db_connection)
             m.id, m.title, m.imdb_id, m.tmdb_id, m.release_date, m.runtime, 
             m.tagline, m.overview, m.poster_path, m.backdrop_path, m.budget, m.revenue,
             m.status, m.created_at, m.updated_at,
+            COALESCE(AVG(ur.rating::FLOAT), 0) AS average_rating,
+            COUNT(ur.rating) AS num_reviews,
             array_agg(DISTINCT g.name) AS genres,
-            (SELECT json_agg(jsonb_build_object('name', p.name, 'role', mp.role, 'character_name', mp.character_name,
-                                                'profile_path',p.profile_path, 'order', mp."order") ORDER BY mp."order")
-             FROM movie_people mp
-             JOIN people p ON mp.person_id = p.id
-             WHERE mp.movie_id = m.id AND mp.role = 'Actor'
+            COALESCE(
+                (
+                    SELECT json_agg(jsonb_build_object('name', p.name, 'role', mp.role, 'character_name', mp.character_name,
+                                                        'profile_path', p.profile_path, 'order', mp."order") ORDER BY mp."order")
+                    FROM movie_people mp
+                    JOIN people p ON mp.person_id = p.id
+                    WHERE mp.movie_id = m.id AND mp.role = 'Actor'
+                ),
+                '[]'
             ) AS actors,
-            (SELECT json_agg(jsonb_build_object('name', p.name, 'role', mp.role, 'profile_path', p.profile_path))
-             FROM movie_people mp
-             JOIN people p ON mp.person_id = p.id
-             WHERE mp.movie_id = m.id AND mp.role = 'Director'
+            COALESCE(
+                (
+                    SELECT json_agg(jsonb_build_object('name', p.name, 'role', mp.role, 'profile_path', p.profile_path))
+                    FROM movie_people mp
+                    JOIN people p ON mp.person_id = p.id
+                    WHERE mp.movie_id = m.id AND mp.role = 'Director'
+                ),
+                '[]'
             ) AS directors
         FROM 
             movies m
         LEFT JOIN movie_genres mg ON m.id = mg.movie_id
         LEFT JOIN genres g ON mg.genre_id = g.id
+        LEFT JOIN user_ratings ur ON m.id = ur.movie_id
         WHERE 
             m.id = $1
         GROUP BY 
