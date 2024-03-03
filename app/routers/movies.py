@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Literal
 
 from asyncpg import Connection
 from fastapi import APIRouter, Depends, HTTPException
@@ -40,6 +41,8 @@ async def get_movies(
         offset: int = 0,
         genres: str = None,
         release_year: str = None,
+        sort: Literal["release_date", "title"] = "release_date",
+        sort_order: Literal["asc", "desc"] = "desc",
         conn: Connection = Depends(get_db_connection)
 ) -> dict[str, int | list[Movie | str]]:
     where = ""
@@ -120,6 +123,7 @@ async def get_movies(
         GROUP BY 
             m.id
         {"HAVING " + having if having else ""}
+        ORDER BY {sort} {sort_order}
         LIMIT $1 OFFSET $2;
         """, *params
     )
