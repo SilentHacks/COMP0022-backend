@@ -42,7 +42,7 @@ async def get_movies(
         genres: str = None,
         release_year: str = None,
         sort: Literal["release_date", "title"] = "release_date",
-        sort_order: Literal["asc", "desc"] = "desc",
+        sort_order: Literal["desc", "asc"] = "desc",
         conn: Connection = Depends(get_db_connection)
 ) -> dict[str, int | list[Movie | str]]:
     where = ""
@@ -129,6 +129,12 @@ async def get_movies(
     )
 
     return {**metadata, 'movies': [dict(movie) for movie in movies]}  # type: ignore
+
+
+@router.get("/ids")
+async def get_ids(conn: Connection = Depends(get_db_connection)) -> list[int]:
+    movies = await conn.fetch("SELECT id FROM movies")
+    return [movie['id'] for movie in movies]
 
 
 @router.get("/{movie_id}")
