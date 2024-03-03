@@ -65,20 +65,30 @@ async def get_movies(
             params.append(min(split_years))
             params.append(max(split_years))
 
+    total_movies = None
     if where or having:
         total_rows_query = f"""
-                SELECT COUNT(*) FROM (
-                    SELECT m.id FROM movies m
-                    INNER JOIN movie_genres mg ON m.id = mg.movie_id
-                    INNER JOIN genres g ON mg.genre_id = g.id
-                    {"WHERE " + where if where else ""}
-                    GROUP BY m.id
-                    {"HAVING " + having if having else ""}
-                ) AS total_rows HAVING COUNT(*) = $1 OR COUNT(*) != $1 OR COUNT(*) = $2;
+            SELECT 
+                COUNT(*) AS total_movies
+            FROM (
+                SELECT 
+                    m.id
+                FROM movies m
+                INNER JOIN movie_genres mg ON m.id = mg.movie_id
+                INNER JOIN genres g ON mg.genre_id = g.id
+                {"WHERE " + where if where else ""}
+                GROUP BY m.id
+                {"HAVING " + having if having else ""}
+            ) AS sub HAVING COUNT(*) = $1 OR COUNT(*) != $1 OR COUNT(*) = $2;
                 """
-        total_rows = await conn.fetchval(total_rows_query, *params)
-    else:
-        total_rows = await conn.fetchval("SELECT COUNT(*) FROM movies")
+        total_movies = await conn.fetchval(total_rows_query, *params)
+
+    metadata = await conn.fetchrow(
+        "SELECT COUNT(*) AS total_movies, MIN(EXTRACT(YEAR FROM release_date)) AS min_year, "
+        "MAX(EXTRACT(YEAR FROM release_date)) AS max_year FROM movies"
+    )
+    if total_movies is not None:
+        metadata = {**metadata, 'total_movies': total_movies}
 
     movies = await conn.fetch(
         f"""
@@ -110,7 +120,7 @@ async def get_movies(
         """, *params
     )
 
-    return {'total_movies': total_rows, 'movies': [dict(movie) for movie in movies]}  # type: ignore
+    return {**metadata, 'movies': [dict(movie) for movie in movies]}  # type: ignore
 
 
 @router.get("/{movie_id}")
