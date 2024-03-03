@@ -41,7 +41,7 @@ async def get_movies(
         genres: str = None,
         release_year: str = None,
         conn: Connection = Depends(get_db_connection)
-) -> dict[str, int | list[Movie]]:
+) -> dict[str, int | list[Movie | str]]:
     where = ""
     having = ""
     params = [limit, offset]
@@ -87,8 +87,12 @@ async def get_movies(
         "SELECT COUNT(*) AS total_movies, MIN(EXTRACT(YEAR FROM release_date)) AS min_year, "
         "MAX(EXTRACT(YEAR FROM release_date)) AS max_year FROM movies"
     )
+    metadata = dict(metadata)
     if total_movies is not None:
-        metadata = {**metadata, 'total_movies': total_movies}
+        metadata['total_movies'] = total_movies
+
+    genres = await conn.fetch("SELECT name FROM genres")
+    metadata['genres'] = [genre['name'] for genre in genres]
 
     movies = await conn.fetch(
         f"""
