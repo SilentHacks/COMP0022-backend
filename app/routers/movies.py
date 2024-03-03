@@ -43,7 +43,14 @@ async def get_movies(
         offset: int = 0,
         genres: str = None,
         release_year: str = None,
-        sort: Literal["release_date", "title", "average_rating", "runtime", "num_reviews"] = "release_date",
+        sort: Literal[
+            "release_date",
+            "title",
+            "average_rating",
+            "runtime",
+            "num_reviews",
+            "popularity"
+        ] = "release_date",
         sort_order: Literal["desc", "asc"] = "desc",
         conn: Connection = Depends(get_db_connection)
 ) -> dict[str, int | list[Movie | str]]:
@@ -107,6 +114,7 @@ async def get_movies(
             m.status, m.created_at, m.updated_at,
             COALESCE(AVG(ur.rating::FLOAT), 0) AS average_rating,
             COUNT(ur.rating) AS num_reviews,
+            COALESCE((AVG(ur.rating)::FLOAT * LOG(COUNT(ur.rating) + 1)), 0) AS popularity,
             array_agg(DISTINCT g.name) AS genres,
             COALESCE(
                 (
@@ -160,6 +168,7 @@ async def get_movie(movie_id: int, conn: Connection = Depends(get_db_connection)
             m.status, m.created_at, m.updated_at,
             COALESCE(AVG(ur.rating::FLOAT), 0) AS average_rating,
             COUNT(ur.rating) AS num_reviews,
+            COALESCE((AVG(ur.rating)::FLOAT * LOG(COUNT(ur.rating) + 1)), 0) AS popularity,
             array_agg(DISTINCT g.name) AS genres,
             COALESCE(
                 (
