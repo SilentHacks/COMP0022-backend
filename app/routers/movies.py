@@ -43,7 +43,7 @@ async def get_movies(
         offset: int = 0,
         genres: str = None,
         release_year: str = None,
-        sort: Literal["release_date", "title", "average_rating", "runtime"] = "release_date",
+        sort: Literal["release_date", "title", "average_rating", "runtime", "num_reviews"] = "release_date",
         sort_order: Literal["desc", "asc"] = "desc",
         conn: Connection = Depends(get_db_connection)
 ) -> dict[str, int | list[Movie | str]]:
