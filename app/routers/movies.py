@@ -44,6 +44,7 @@ async def get_movies(
         genres: str = None,
         release_year: str = None,
         rating: str = None,
+        query: str = None,
         sort: Literal[
             "release_date",
             "title",
@@ -89,6 +90,13 @@ async def get_movies(
                        f"BETWEEN ${len(params) + 1} AND ${len(params) + 2}")
             params.append(min(split_rating))
             params.append(max(split_rating))
+
+    if query:
+        where += (f"{' AND ' if where else ''}"
+                  f"LOWER(m.title) LIKE ${len(params) + 1} OR "
+                  f"EXISTS (SELECT 1 FROM movie_keywords mk JOIN keywords k ON mk.keyword_id = k.id "
+                  f"WHERE mk.movie_id = m.id AND k.name LIKE ${len(params) + 1})")
+        params.append(f"%{query.lower()}%")
 
     total_movies = None
     if where or having:
