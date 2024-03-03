@@ -43,6 +43,7 @@ async def get_movies(
         offset: int = 0,
         genres: str = None,
         release_year: str = None,
+        rating: str = None,
         sort: Literal[
             "release_date",
             "title",
@@ -72,10 +73,22 @@ async def get_movies(
             except ValueError:
                 raise HTTPException(status_code=400, detail="Invalid release_year format")
 
-            where += (f"{' AND ' if where else ''}EXTRACT(YEAR FROM m.release_date) "
-                      f"BETWEEN ${len(params) + 1} AND ${len(params) + 2}")
+            where += f"EXTRACT(YEAR FROM m.release_date) BETWEEN ${len(params) + 1} AND ${len(params) + 2}"
             params.append(min(split_years))
             params.append(max(split_years))
+
+    if rating:
+        split_rating = [r.strip() for r in rating.split(",") if r]
+        if split_rating:
+            try:
+                split_rating = [int(r) for r in split_rating]
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid rating format")
+
+            having += (f"{' AND ' if having else ''}COALESCE(AVG(ur.rating::FLOAT), 0) "
+                       f"BETWEEN ${len(params) + 1} AND ${len(params) + 2}")
+            params.append(min(split_rating))
+            params.append(max(split_rating))
 
     total_movies = None
     if where or having:
@@ -84,10 +97,12 @@ async def get_movies(
                 COUNT(*) AS total_movies
             FROM (
                 SELECT 
-                    m.id
+                    m.id,
+                    COALESCE(AVG(ur.rating::FLOAT), 0) AS average_rating
                 FROM movies m
                 INNER JOIN movie_genres mg ON m.id = mg.movie_id
                 INNER JOIN genres g ON mg.genre_id = g.id
+                LEFT JOIN user_ratings ur ON m.id = ur.movie_id
                 {"WHERE " + where if where else ""}
                 GROUP BY m.id
                 {"HAVING " + having if having else ""}
