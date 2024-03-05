@@ -5,12 +5,18 @@ from asyncpg import Connection
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from .genres import router as genres_router
 from ..dependencies import get_db_connection
 
 router = APIRouter(
     prefix="/movies",
     tags=["movies"],
     responses={404: {"description": "Not found"}},
+)
+router.include_router(
+    genres_router,
+    tags=["genres"],
+    prefix="/genres",
 )
 
 
