@@ -37,6 +37,7 @@ class Movie(BaseModel):
     created_at: datetime
     updated_at: datetime
     average_rating: float
+    predicted_rating: float | None = None
     num_reviews: int
     genres: list[str] = []
     actors: list[dict[str, str | int | None]] = []
