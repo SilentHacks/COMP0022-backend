@@ -9,20 +9,26 @@ router = APIRouter()
 @router.get("/popular")
 async def get_popular(conn: Connection = Depends(get_db_connection)) -> list[dict[str, str | float]]:
     genres = await conn.fetch("""
+        WITH genre_stats AS (
+            SELECT 
+                g.name AS genre, 
+                COALESCE(AVG(ur.rating), 0) AS average_rating,
+                COUNT(ur.rating) AS "count"
+            FROM 
+                genres g
+            INNER JOIN 
+                movie_genres mg ON g.id = mg.genre_id
+            LEFT JOIN 
+                user_ratings ur ON mg.movie_id = ur.movie_id
+            GROUP BY 
+                g.name
+        )
         SELECT 
-            g.name AS genre, 
-            COALESCE(AVG(ur.rating)::FLOAT, 0) AS average_rating,
-            COUNT(ur.rating) AS "count",
-            COALESCE((AVG(ur.rating)::FLOAT * LOG(COUNT(ur.rating) + 1)), 0) AS popularity
+            genre_stats.*,
+            calculate_popularity(average_rating, "count") AS popularity
         FROM 
-            genres g
-        INNER JOIN 
-            movie_genres mg ON g.id = mg.genre_id
-        LEFT JOIN 
-            user_ratings ur ON mg.movie_id = ur.movie_id
-        GROUP BY 
-            g.name
-        ORDER BY 
+            genre_stats
+        ORDER BY
             popularity DESC;
     """)
 
