@@ -147,4 +147,58 @@ async def get_movie(movie_id: int, conn: Connection = Depends(get_db_connection)
     if not movie:
         raise HTTPException(status_code=404, detail="Movie not found")
 
-    return dict(movie)  # type: ignore
+    predicted_rating = await conn.fetchval(
+        f"""
+        WITH random_users AS (
+            SELECT id AS user_id
+            FROM users
+            ORDER BY RANDOM()
+            LIMIT 100
+        ),
+        relevant_genres AS (
+            SELECT name AS genre_name FROM genres WHERE id IN (
+                SELECT genre_id
+                FROM movie_genres
+                WHERE movie_id = $1
+            )
+        ),
+        baseline_genre_rating AS (
+            SELECT
+                genre_name,
+                AVG(ur.rating) AS avg_genre_rating
+            FROM
+                user_ratings ur
+            INNER JOIN
+                movie_genres mg ON ur.movie_id = mg.movie_id
+            INNER JOIN
+                genres ON genres.id = mg.genre_id
+            INNER JOIN
+                relevant_genres ON relevant_genres.genre_name = genres.name
+            WHERE 
+                ur.movie_id != $1
+            GROUP BY
+                genre_name
+        ),
+        genre_deviation AS (
+            SELECT
+                AVG(roe.avg_rating_above_expected) AS avg_deviation
+            FROM
+                rating_over_expected_by_genre roe
+            WHERE
+                roe.name IN (SELECT genre_name FROM relevant_genres)
+            AND roe.user_id IN (SELECT user_id FROM random_users)
+        ),
+        predicted_rating AS (
+            SELECT
+                AVG(bg.avg_genre_rating + gd.avg_deviation) AS predicted_avg_rating
+            FROM
+                baseline_genre_rating bg,
+                genre_deviation gd
+        )
+        SELECT predicted_avg_rating
+        FROM
+            predicted_rating;
+        """, movie_id
+    )
+
+    return {**movie, 'predicted_rating': predicted_rating}  # type: ignore
