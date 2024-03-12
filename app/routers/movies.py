@@ -38,6 +38,7 @@ class Movie(BaseModel):
     updated_at: datetime
     average_rating: float
     predicted_rating: float | None = None
+    avg_user_rating: float | None = None
     num_reviews: int
     genres: list[str] = []
     actors: list[dict[str, str | int | None]] = []
@@ -202,4 +203,40 @@ async def get_movie(movie_id: int, conn: Connection = Depends(get_db_connection)
         """, movie_id
     )
 
-    return {**movie, 'predicted_rating': predicted_rating}  # type: ignore
+    avg_user_rating = await conn.fetchval(
+        f"""
+        WITH user_averages AS (
+            SELECT
+                user_id,
+                AVG(rating) as avg_rating
+            FROM
+                user_ratings
+            GROUP BY
+                user_id
+        ),
+        user_movie_averages AS (
+            SELECT
+                r.movie_id,
+                r.user_id,
+                u.avg_rating AS user_avg_rating
+            FROM
+                user_ratings r
+            INNER JOIN
+                user_averages u on r.user_id = u.user_id AND r.movie_id = 1
+        )
+        SELECT
+            AVG(uma.user_avg_rating) AS avg_user_rating
+        FROM
+            user_ratings m 
+        INNER JOIN
+            user_movie_averages uma on m.movie_id = uma.movie_id
+        GROUP BY
+            m.movie_id;
+        """
+    )
+
+    return {  # type: ignore
+        **movie,
+        'predicted_rating': predicted_rating,
+        'avg_user_rating': avg_user_rating
+    }
