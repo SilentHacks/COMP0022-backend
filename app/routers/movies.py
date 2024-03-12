@@ -41,6 +41,7 @@ class Movie(BaseModel):
     avg_user_rating: float | None = None
     num_reviews: int
     genres: list[str] = []
+    correlated_genres: list[str] = []
     actors: list[dict[str, str | int | None]] = []
     directors: list[dict[str, str | None]] = []
 
@@ -235,8 +236,68 @@ async def get_movie(movie_id: int, conn: Connection = Depends(get_db_connection)
         """
     )
 
+    correlated_genres = await conn.fetch(
+        f"""
+        WITH genre_preferences AS (
+            SELECT
+                ur.user_id,
+                g.name AS genre_name,
+                AVG(ur.rating) AS avg_rating
+            FROM
+                user_ratings ur
+            JOIN
+                movie_genres mg ON ur.movie_id = mg.movie_id
+            JOIN
+                genres g ON mg.genre_id = g.id
+            GROUP BY
+                ur.user_id, g.name
+        ),
+        genre_pairs AS (
+            SELECT
+                a.user_id,
+                a.genre_name AS genre_a,
+                b.genre_name AS genre_b,
+                a.avg_rating AS avg_rating_a,
+                b.avg_rating AS avg_rating_b
+            FROM
+                genre_preferences a
+            JOIN
+                genre_preferences b ON a.user_id = b.user_id AND a.genre_name < b.genre_name
+        ),
+        filtered_pairs AS (
+            SELECT
+                genre_a,
+                genre_b,
+                corr(avg_rating_a, avg_rating_b) AS correlation,
+                CASE
+                    WHEN genre_a = ANY($1) THEN genre_b
+                    ELSE genre_a
+                END AS correlated_genre
+            FROM
+                genre_pairs
+            GROUP BY
+                genre_a, genre_b
+        )
+        SELECT
+            genre_a,
+            genre_b,
+            correlation,
+            correlated_genre
+        FROM
+            filtered_pairs
+        WHERE 
+            (genre_a = ANY($1) AND genre_b <> ALL($1))
+            OR 
+            (genre_b = ANY($1) AND genre_a <> ALL($1))
+        ORDER BY
+            correlation DESC
+        LIMIT 2;
+        """, movie['genres']
+    )
+
     return {  # type: ignore
         **movie,
         'predicted_rating': predicted_rating,
-        'avg_user_rating': avg_user_rating
+        'avg_user_rating': avg_user_rating,
+        'correlated_genres': list(set(genre['correlated_genre'] for genre in correlated_genres))
     }
