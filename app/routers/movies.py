@@ -152,53 +152,59 @@ async def get_movie(movie_id: int, conn: Connection = Depends(get_db_connection)
 
     predicted_rating = await conn.fetchval(
         f"""
-        WITH random_users AS (
-            SELECT id AS user_id
-            FROM users
-            ORDER BY RANDOM()
-            LIMIT 100
+        WITH relevant_genres AS (
+            SELECT genre_id, genres.name AS genre_name
+            FROM movie_genres
+            INNER JOIN genres ON movie_genres.genre_id = genres.id
+            WHERE movie_id = $1
         ),
-        relevant_genres AS (
-            SELECT name AS genre_name FROM genres WHERE id IN (
-                SELECT genre_id
-                FROM movie_genres
-                WHERE movie_id = $1
-            )
-        ),
-        baseline_genre_rating AS (
+        sampled_user_ratings AS (
             SELECT
-                genre_name,
-                AVG(ur.rating) AS avg_genre_rating
+                ur.user_id,
+                ur.movie_id,
+                ur.rating,
+                ROW_NUMBER() OVER (PARTITION BY ur.movie_id ORDER BY RANDOM()) AS row_num,
+                COUNT(*) OVER (PARTITION BY ur.movie_id) AS total_count
             FROM
                 user_ratings ur
-            INNER JOIN
+            JOIN
                 movie_genres mg ON ur.movie_id = mg.movie_id
-            INNER JOIN
-                genres ON genres.id = mg.genre_id
-            INNER JOIN
-                relevant_genres ON relevant_genres.genre_name = genres.name
-            WHERE 
-                ur.movie_id != $1
-            GROUP BY
-                genre_name
+            WHERE
+                ur.movie_id = $1
+                AND mg.genre_id IN (SELECT genre_id FROM relevant_genres)
         ),
-        genre_deviation AS (
+        ten_percent_sample AS (
             SELECT
+                sur.user_id,
+                sur.movie_id,
+                sur.rating
+            FROM
+                sampled_user_ratings sur
+            WHERE
+                sur.row_num <= CEIL(sur.total_count * 0.1)
+        ),
+        avg_genre_deviation AS (
+            SELECT
+                roe.user_id,
                 AVG(roe.avg_rating_above_expected) AS avg_deviation
             FROM
                 rating_over_expected_by_genre roe
             WHERE
                 roe.name IN (SELECT genre_name FROM relevant_genres)
-            AND roe.user_id IN (SELECT user_id FROM random_users)
+                AND roe.user_id IN (SELECT user_id FROM ten_percent_sample)
+            GROUP BY
+                roe.user_id
         ),
         predicted_rating AS (
             SELECT
-                AVG(bg.avg_genre_rating + gd.avg_deviation) AS predicted_avg_rating
+                AVG(ten_percent_sample.rating - COALESCE(avg_genre_deviation.avg_deviation, 0)) AS predicted_avg_rating
             FROM
-                baseline_genre_rating bg,
-                genre_deviation gd
+                ten_percent_sample
+            LEFT JOIN
+                avg_genre_deviation ON ten_percent_sample.user_id = avg_genre_deviation.user_id
         )
-        SELECT predicted_avg_rating
+        SELECT 
+            predicted_avg_rating
         FROM
             predicted_rating;
         """, movie_id
